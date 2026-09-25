@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Certificate Radar</title>
+<style>
+:root{
+  --bg:#0f172a;--panel:#1e293b;--panel2:#26334a;--border:#334155;
+  --text:#e2e8f0;--muted:#94a3b8;--accent:#38bdf8;--accent2:#0ea5e9;
+  --ok:#22c55e;--info:#3b82f6;--warn:#f59e0b;--crit:#ef4444;--dark:#b91c1c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',Arial,sans-serif;font-size:14px}
+header{display:flex;align-items:center;gap:.8rem;padding:.8rem 1.4rem;background:var(--panel);border-bottom:1px solid var(--border)}
+header h1{font-size:1.15rem;font-weight:600}
+header .radar{color:var(--accent)}
+header .sub{color:var(--muted);font-size:.78rem}
+main{max-width:1400px;margin:0 auto;padding:1.2rem}
+.grid{display:grid;gap:.9rem}
+.kpis{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:.7rem;padding:.9rem 1.1rem}
+.kpi .v{font-size:1.7rem;font-weight:700}
+.kpi .l{color:var(--muted);font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}
+.kpi.ok .v{color:var(--ok)} .kpi.info .v{color:var(--info)} .kpi.warn .v{color:var(--warn)}
+.kpi.crit .v{color:var(--crit)} .kpi.exp .v{color:var(--dark)}
+.two-col{grid-template-columns:2fr 1fr}
+table{width:100%;border-collapse:collapse;font-size:.83rem}
+th,td{padding:.45rem .6rem;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;cursor:pointer;user-select:none;white-space:nowrap}
+th:hover{color:var(--text)}
+tr:hover td{background:var(--panel2)}
+.badge{display:inline-block;padding:.12rem .55rem;border-radius:1rem;font-size:.7rem;font-weight:700}
+.b-ok{background:#14532d;color:#bbf7d0}.b-info{background:#1e3a8a;color:#bfdbfe}
+.b-warn{background:#78350f;color:#fde68a}.b-crit{background:#7f1d1d;color:#fecaca}
+.b-exp{background:#450a0a;color:#fca5a5}.b-unk{background:#334155;color:#cbd5e1}
+.risk{font-weight:700}
+.r0{color:var(--ok)}.r1{color:#a3e635}.r2{color:var(--warn)}.r3{color:#fb923c}.r4{color:var(--crit)}
+.muted{color:var(--muted)}
+.mono{font-family:Consolas,monospace;font-size:.78rem}
+section{margin-top:1.1rem}
+h2{font-size:.95rem;font-weight:600;margin-bottom:.6rem;color:var(--accent)}
+.row{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}
+input,select,textarea,button{font:inherit;background:var(--panel2);color:var(--text);
+  border:1px solid var(--border);border-radius:.45rem;padding:.45rem .7rem;outline:none}
+input:focus,textarea:focus{border-color:var(--accent)}
+textarea{width:100%;min-height:90px;resize:vertical;font-family:Consolas,monospace;font-size:.8rem}
+button{cursor:pointer;background:var(--accent2);border:none;color:#fff;font-weight:600}
+button:hover{filter:brightness(1.15)}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--text);font-weight:400}
+button:disabled{opacity:.5;cursor:wait}
+.filters input,.filters select{max-width:180px}
+progress{width:100%;height:8px;appearance:none;border:none;border-radius:4px;overflow:hidden}
+progress::-webkit-progress-bar{background:var(--panel2)}
+progress::-webkit-progress-value{background:var(--accent2)}
+#spin{display:none;width:15px;height:15px;border:2px solid #fff;border-top-color:transparent;
+  border-radius:50%;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+details{background:var(--panel);border:1px solid var(--border);border-radius:.7rem;padding:.8rem 1rem;margin-top:1rem}
+summary{cursor:pointer;font-weight:600;color:var(--accent)}
+.dimm{opacity:.55}
+#toast{position:fixed;bottom:1rem;right:1rem;background:var(--panel2);border:1px solid var(--accent);
+  border-radius:.5rem;padding:.7rem 1rem;display:none;max-width:420px;z-index:9}
+.chain-ok{color:var(--ok);font-weight:700}.chain-bad{color:var(--crit);font-weight:700}
+footer{text-align:center;color:var(--muted);font-size:.72rem;padding:1.4rem}
+@media(max-width:900px){.two-col{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span style="font-size:1.5rem">📡</span>
+  <div><h1>Certificate <span class="radar">Radar</span></h1>
+  <div class="sub">Централизованный контроль TLS-сертификатов · обнаружим проблему до инцидента</div></div>
+  <div style="margin-left:auto" class="row">
+    <button class="ghost" onclick="loadAll()">⟳ Обновить</button>
+    <a href="/api/export/csv"><button class="ghost">CSV</button></a>
+    <a href="/api/export/xlsx"><button class="ghost">Excel</button></a>
+    <a href="/api/export/html"><button class="ghost">HTML-отчёт</button></a>
+  </div>
+</header>
+<main>
+
+<div class="grid kpis" id="kpis"></div>
+
+<section class="grid two-col">
+  <div class="card">
+    <h2>Сертификаты</h2>
+    <div class="row filters" style="margin-bottom:.7rem">
+      <input id="fService" placeholder="Фильтр: сервис…" oninput="renderTable()">
+      <input id="fOwner" placeholder="Фильтр: владелец…" oninput="renderTable()">
+      <input id="fIssuer" placeholder="Фильтр: издатель…" oninput="renderTable()">
+      <select id="fStatus" onchange="renderTable()">
+        <option value="">Все статусы</option>
+        <option>OK</option><option>Information</option><option>Warning</option>
+        <option>Critical</option><option>Expired</option><option>Unknown</option>
+      </select>
+      <label class="muted" style="font-size:.75rem"><input type="checkbox" id="fOnlyProblems" onchange="renderTable()"> только проблемные</label>
+      <span id="rowCount" class="muted" style="margin-left:auto"></span>
+    </div>
+    <div style="overflow-x:auto">
+    <table id="tbl">
+      <thead><tr>
+        <th data-k="endpoint">Сервис ⇅</th><th data-k="last_status">Статус ⇅</th>
+        <th data-k="last_risk">Risk ⇅</th><th data-k="last_days_left">Осталось ⇅</th>
+        <th data-k="_cn">Сертификат ⇅</th><th data-k="_issuer">Издатель ⇅</th>
+        <th data-k="_notAfter">Истекает ⇅</th><th>Цепочка</th><th>DNS</th>
+        <th data-k="owner">Владелец ⇅</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h2>Ближайшее истечение</h2>
+      <table id="soon"><tbody></tbody></table>
+    </div>
+    <div class="card" style="margin-top:.9rem">
+      <h2>Динамика Risk Score</h2>
+      <div id="trend" class="muted" style="min-height:60px">Нет данных — запустите сканирование</div>
+    </div>
+    <div class="card" style="margin-top:.9rem">
+      <h2>Уведомления (последние)</h2>
+      <table id="notifs"><tbody><tr><td class="muted">Пока нет</td></tr></tbody></table>
+    </div>
+  </div>
+</section>
+
+<details>
+  <summary>🔍 Новое сканирование (DNS / IP / URL / диапазоны)</summary>
+  <div class="grid" style="grid-template-columns:2fr 1fr;margin-top:.8rem">
+    <div>
+      <textarea id="targets" spellcheck="false">localhost:8443
+localhost:8444
+localhost:8445
+localhost:8446
+localhost:8447
+localhost:8448</textarea>
+      <div class="muted" style="margin:.4rem 0 .6rem">
+        Форматы: <span class="mono">host</span> · <span class="mono">host:8443</span> ·
+        <span class="mono">https://host:8443</span> · <span class="mono">192.168.1.10-20</span> ·
+        <span class="mono">192.168.1.0/28</span> — по одному в строке или через запятую
+      </div>
+      <div class="row">
+        <button id="btnScan" onclick="startScan()">▶ Запустить сканирование</button>
+        <span id="spin"></span><span id="scanMsg" class="muted"></span>
+      </div>
+      <div style="margin-top:.5rem"><progress id="prog" max="100" value="0" style="display:none"></progress></div>
+    </div>
+    <div class="row" style="flex-direction:column;align-items:stretch">
+      <label>Таймаут, с <input id="timeout" type="number" value="5" min="1" max="30" style="width:70px"></label>
+      <label>Потоки <input id="conc" type="number" value="32" min="1" max="256" style="width:70px"></label>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>⚙️ Настройки порогов и уведомлений</summary>
+  <div class="row" style="margin-top:.8rem">
+    <label>Пороги (дней, через запятую) <input id="sTh" class="mono" style="max-width:200px"></label>
+    <label>Telegram token <input id="sTgT" class="mono" type="password" style="max-width:220px" placeholder="не задан"></label>
+    <label>Chat ID <input id="sTgC" class="mono" style="max-width:130px"></label>
+    <label>SMTP <input id="sSmtp" class="mono" style="max-width:200px" placeholder="host:port"></label>
+    <button onclick="saveSettings()">Сохранить</button>
+  </div>
+  <div class="muted" style="margin-top:.5rem">Рекомендуемые пороги: 60, 30, 14, 7, 1. Уведомление отправляется один раз для каждого порога (без повторов).</div>
+</details>
+
+</main>
+<footer>Certificate Radar MVP · Read-only сканирование · Risk Score 0–100</footer>
+<div id="toast"></div>
+
+<script>
+let SERVICES = [];
+let sortKey = 'last_days_left', sortAsc = true;
+
+const badge = s => ({OK:'b-ok',Information:'b-info',Warning:'b-warn',Critical:'b-crit',Expired:'b-exp'}[s] || 'b-unk');
+const riskCls = v => v>=75?'r4':v>=50?'r3':v>=25?'r2':v>0?'r1':'r0';
+
+async function api(path, opts){ const r = await fetch(path, opts); if(!r.ok) throw new Error((await r.json().catch(()=>({}))).detail || r.status); return r.json(); }
+
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; setTimeout(()=>t.style.display='none',4000); }
+
+async function loadAll(){
+  try{
+    const [s, sum, trend, notifs] = await Promise.all([
+      api('/api/services'), api('/api/summary'), api('/api/trend'), api('/api/notifications')]);
+    SERVICES = s.services; renderKpis(sum); renderTable(); renderSoon(sum); renderTrend(trend.trend); renderNotifs(notifs.notifications);
+  }catch(e){ toast('Ошибка загрузки: '+e.message); }
+}
+
+function renderKpis(s){
+  const b=s.by_status||{};
+  document.getElementById('kpis').innerHTML = `
+    <div class="card kpi"><div class="v">${s.total}</div><div class="l">Сертификатов</div></div>
+    <div class="card kpi ok"><div class="v">${b.OK||0}</div><div class="l">OK (&gt;60 дн)</div></div>
+    <div class="card kpi info"><div class="v">${b.Information||0}</div><div class="l">Information</div></div>
+    <div class="card kpi warn"><div class="v">${b.Warning||0}</div><div class="l">Warning</div></div>
+    <div class="card kpi crit"><div class="v">${b.Critical||0}</div><div class="l">Critical</div></div>
+    <div class="card kpi exp"><div class="v">${b.Expired||0}</div><div class="l">Expired</div></div>
+    <div class="card kpi"><div class="v ${riskCls(s.max_risk)}">${s.max_risk}</div><div class="l">Max Risk Score</div></div>
+    <div class="card kpi ${s.ownerless?'warn':''}"><div class="v">${s.ownerless}</div><div class="l">Без владельца</div></div>`;
+}
+
+function certOf(s){ const c=s.cert||{}; return {cn:c.subject_cn, issuer:c.issuer_cn||c.issuer,
+  na:c.not_after? new Date(c.not_after).toLocaleDateString('ru-RU') : null}; }
+
+function renderTable(){
+  const fS=el('fService').value.toLowerCase(), fO=el('fOwner').value.toLowerCase(),
+        fI=el('fIssuer').value.toLowerCase(), fSt=el('fStatus').value,
+        onlyP=el('fOnlyProblems').checked;
+  let rows = SERVICES.map(s=>({...s, _m:certOf(s)}));
+  if(fS) rows=rows.filter(r=>r.endpoint.toLowerCase().includes(fS));
+  if(fO) rows=rows.filter(r=>(r.owner||'').toLowerCase().includes(fO));
+  if(fI) rows=rows.filter(r=>((r._m.issuer||'')+'').toLowerCase().includes(fI));
+  if(fSt) rows=rows.filter(r=>(r.last_status||'Unknown')===fSt);
+  if(onlyP) rows=rows.filter(r=>['Critical','Expired','Warning'].includes(r.last_status) || r.chain_valid===0 || r.hostname_match===0);
+  rows.sort((a,b)=>{
+    let va=a[sortKey], vb=b[sortKey];
+    if(sortKey==='_cn'){va=a._m.cn||'';vb=b._m.cn||''}
+    if(sortKey==='_issuer'){va=a._m.issuer||'';vb=b._m.issuer||''}
+    if(sortKey==='_notAfter'){va=a._m.na||'';vb=b._m.na||''}
+    if(va==null)return 1; if(vb==null)return -1;
+    return (va<vb?-1:va>vb?1:0)*(sortAsc?1:-1);
+  });
+  document.querySelector('#tbl tbody').innerHTML = rows.map(r=>`
+    <tr>
+      <td class="mono">${r.endpoint}${r.criticality==='critical'?' <span class="badge b-crit">КРИТ</span>':''}</td>
+      <td><span class="badge ${badge(r.last_status)}">${r.last_status||'Unknown'}</span></td>
+      <td><span class="risk ${riskCls(r.last_risk||0)}">${r.last_risk??'-'}</span></td>
+      <td>${r.last_days_left??'-'}</td>
+      <td>${r._m.cn||'-'}</td>
+      <td>${r._m.issuer||'-'}</td>
+      <td>${r._m.na||'-'}</td>
+      <td>${r.chain_valid==null?'<span class="muted">n/a</span>':r.chain_valid?'<span class="chain-ok">✓</span>':`<span class="chain-bad" title="${r.last_error||''}">✗ цепочка</span>`}</td>
+      <td>${r.hostname_match==null?'<span class="muted">n/a</span>':r.hostname_match?'<span class="chain-ok">✓</span>':'<span class="chain-bad">✗ mismatch</span>'}</td>
+      <td><span class="edit-owner" style="cursor:pointer" title="нажмите, чтобы изменить" onclick="editOwner('${r.endpoint}',this)">${r.owner||'<i class="muted">не задан</i>'}</span></td>
+    </tr>`).join('');
+  document.getElementById('rowCount').textContent = `${rows.length} из ${SERVICES.length}`;
+}
+
+async function editOwner(ep, cell){
+  const cur = cell.textContent.trim();
+  const val = prompt(`Владелец для ${ep} (через запятую можно: owner, critical):`, cur==='не задан'?'':cur);
+  if(val===null) return;
+  let owner=val, crit=undefined;
+  const parts=val.split(',').map(x=>x.trim()).filter(Boolean);
+  if(parts[parts.length-1]==='critical'){crit='critical';owner=parts.slice(0,-1).join(', ');}
+  else if(parts[parts.length-1]==='normal'){crit='normal';owner=parts.slice(0,-1).join(', ');}
+  try{ await api(`/api/services/${encodeURIComponent(ep)}/owner`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({owner,criticality:crit})}); loadAll(); }
+  catch(e){ toast('Ошибка: '+e.message); }
+}
+
+function renderSoon(s){
+  const t=document.querySelector('#soon tbody');
+  t.innerHTML = s.expiring_soon.length ? s.expiring_soon.map(x=>`
+    <tr><td class="mono">${x.endpoint}</td>
+    <td><span class="badge ${badge(x.status)}">${x.status}</span></td>
+    <td class="risk ${riskCls(x.days_left<0?100:x.days_left)}">${x.days_left} дн</td></tr>`).join('')
+    : '<tr><td class="muted">Всё под контролем ✓</td></tr>';
+}
+
+function renderTrend(tr){
+  const d=document.getElementById('trend');
+  if(!tr || !tr.length){ d.innerHTML='Нет данных — запустите сканирование'; return; }
+  const pts=[...tr].reverse();
+  const max=100, w=260, h=70;
+  const svg=`<svg width="100%" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <polyline fill="none" stroke="#38bdf8" stroke-width="2"
+      points="${pts.map((p,i)=>`${(i/(pts.length-1||1))*(w-6)+3},${h-6-(p.avg_risk/max)*(h-12)}`).join(' ')}"/></svg>`;
+  d.innerHTML = svg + `<div class="muted" style="margin-top:.3rem">средний Risk Score: ${pts[pts.length-1].avg_risk} (скан #${pts[pts.length-1].id})</div>`;
+}
+
+function renderNotifs(list){
+  const t=document.querySelector('#notifs tbody');
+  t.innerHTML = (list&&list.length) ? list.slice(0,8).map(n=>`
+    <tr><td class="mono" style="font-size:.72rem">${n.endpoint}</td>
+    <td class="muted" style="font-size:.72rem">${n.threshold} дн</td>
+    <td style="font-size:.72rem">${n.ok?'✓':'✗'}</td></tr>`).join('')
+    : '<tr><td class="muted">Пока нет</td></tr>';
+}
+
+async function startScan(){
+  const btn=document.getElementById('btnScan'); btn.disabled=true;
+  document.getElementById('spin').style.display='inline-block';
+  const msg=document.getElementById('scanMsg'); msg.textContent='Сканирование…';
+  const prog=document.getElementById('prog'); prog.style.display='block'; prog.value=15;
+  const fake=setInterval(()=>prog.value=Math.min(prog.value+7,90),400);
+  try{
+    const body={targets:el('targets').value, timeout:+el('timeout').value, concurrency:+el('conc').value};
+    const r=await api('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    clearInterval(fake); prog.value=100;
+    msg.textContent=`Готово: ${r.results.length} сервисов, уведомлений: ${(r.notifications_sent||[]).length}`;
+    if((r.notifications_sent||[]).length) toast('📬 Уведомления:\n'+r.notifications_sent.join('\n'));
+    await loadAll();
+  }catch(e){ clearInterval(fake); msg.textContent=''; toast('Ошибка сканирования: '+e.message); }
+  finally{ btn.disabled=false; document.getElementById('spin').style.display='none'; setTimeout(()=>prog.style.display='none',1500); }
+}
+
+async function saveSettings(){
+  const smtp=el('sSmtp').value.split(':');
+  try{
+    await api('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      notify_thresholds: el('sTh').value.split(',').map(x=>+x.trim()).filter(x=>x>0),
+      telegram_bot_token: el('sTgT').value, telegram_chat_id: el('sTgC').value,
+      smtp_host: smtp[0]||'', smtp_port: +(smtp[1]||587)})});
+    toast('Настройки сохранены'); loadSettings();
+  }catch(e){ toast('Ошибка: '+e.message); }
+}
+
+async function loadSettings(){
+  try{
+    const s=await api('/api/settings');
+    el('sTh').value=(s.notify_thresholds||[]).join(', ');
+    el('sTgC').value=s.telegram_chat_id||'';
+    el('sSmtp').value=s.smtp_host?`${s.smtp_host}:${s.smtp_port}`:'';
+  }catch(e){}
+}
+
+function el(id){ return document.getElementById(id); }
+document.querySelectorAll('#tbl th[data-k]').forEach(th=>th.addEventListener('click',()=>{
+  const k=th.dataset.k;
+  if(sortKey===k) sortAsc=!sortAsc; else {sortKey=k; sortAsc=true;}
+  renderTable();
+}));
+loadSettings(); loadAll(); setInterval(loadAll, 30000);
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Runtime data (DB, logs — генерируются во время работы)
+data/
+logs/
+
+# Demo certificates (генерируются: python -m demo.make_pfx)
+demo_certs/pfx/
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.idea/
+.vscode/
